@@ -145,10 +145,10 @@ class NoteNode(Node):
     """
 
     pitch = 0
-    base = 2
+    base = 0
     prefix = ""
 
-    def __init__(self, pitch, base):
+    def __init__(self, pitch, target):
         """
         **pitch**: the pitch of the note
         """
@@ -159,10 +159,28 @@ class NoteNode(Node):
                 "pitch should be in range (1, 60), but get " + pitch
             )
         self.pitch = pitch
-        self.base = base
+        offset = pitch - target
+        while offset < 0:
+            self.base -= 1
+            offset += 12
+        while offset >= 12:
+            self.base += 1
+            offset -= 12
 
     def __str__(self):
-        return notemap[(self._pitch - 1) % 12]
+        prefix = ""
+        suffix = ""
+        offset = self.base
+        while offset < 0:
+            prefix += "("
+            suffix += ")"
+            offset += 1
+        while offset > 0:
+            prefix += "["
+            suffix += "]"
+            offset -= 1
+
+        return prefix + str(self.pitch) + suffix
 
     def set_prefix(self, prefix):
         """
@@ -181,6 +199,9 @@ class EndNode(Node):
         self.is_note = False
         self.is_line_end = True
 
+    def __str__(self):
+        return "\n"
+
 
 class Notation:
     """
@@ -197,6 +218,18 @@ class Notation:
         self._pitch_target = 0
         # pitch_base is in range(-2, 2)
         self._pitch_base = 0
+
+    def __str__(self):
+        output = "{\n"
+        output += "  keymap: " + str(self._keymap) + "\n"
+        output += "  notemap: " + str(self._notemap) + "\n"
+        output += "  origin pitch: " + str(self._pitch_orig) + "\n"
+        output += "  target pitch: " + str(self._pitch_target) + "\n"
+        output += "  title: " + self.title + "\n"
+        output += "  notation:\n"
+        output += "  " + str([str(x) for x in self.notation]) + '\n'
+        output += "}"
+        return output
 
     def _keymap_idx(self, key):
         try:
@@ -277,6 +310,54 @@ class Notation:
             offset += 12 * 2
         return self._notemap[offset % 12]
 
+    def _generate_line(self, line):
+        nt = []
+        i = 0
+        prefix = ""
+        while i < len(line):
+            c = line[i]
+            if "1" <= c <= "7":
+                pitch = self._note_to_pitch(c)
+                note = NoteNode(pitch, self._pitch_target)
+                note.set_prefix(prefix)
+                nt.append(note)
+                prefix = ""
+            elif c == "#":
+                i += 1
+                c = line[i]
+                if not "1" <= c <= "7":
+                    # if '#' is not a note, ignore it
+                    prefix += "#"
+                    continue
+                note = NoteNode(
+                    self._note_to_pitch("#" + c), self._pitch_target
+                )
+                note.set_prefix(prefix)
+                nt.append(note)
+                prefix = ""
+            elif c == "b":
+                i += 1
+                c = line[i]
+                if not "1" <= c <= "7":
+                    prefix += "b"
+                    continue
+                note = NoteNode(
+                    self._note_to_pitch("b" + c), self._pitch_target
+                )
+                note.set_prefix(prefix)
+                nt.append(note)
+                prefix = ""
+            elif c in ("(", "]"):
+                self._pitch_base -= 1
+            elif c in (")", "["):
+                self._pitch_base += 1
+            elif c == "\n":
+                nt.append(EndNode())
+            else:
+                prefix += c
+            i += 1
+        return nt
+
     def translate(self, orig, target, ifile):
         """
         translate note to 'target'
@@ -284,116 +365,69 @@ class Notation:
         with open(ifile, encoding="utf-8") as fd:
             # set title
             self.title = fd.readline().strip()
-            # set origin pitch
-            key_signature: str = fd.readline().strip()
             if orig != 0:
                 self._pitch_orig = self._tone_to_pitch(orig)
-            else:
-                if key_signature == "":
-                    raise HeaderError("notation key is empty")
-                if not key_signature.startswith("1="):
-                    raise HeaderError(
-                        "invalid notation key format " + key_signature
-                    )
-
-                key = key_signature.removeprefix("1=")
-                self._pitch_orig = self._tone_to_pitch(key)
             # set target pitch
             self._pitch_target = self._tone_to_pitch(target)
-            # space line
-            if not fd.readline().strip() == "":
-                raise HeaderError("no a space line")
 
             # translate notation
             nt: list = []
             for line in fd:
-                i = 0
-                prefix = ""
-                while i < len(line):
-                    c = line[i]
-                    if "1" <= c <= "7":
-                        pitch = self._note_to_pitch(c)
-                        note = NoteNode(pitch, self._pitch_base)
-                        note.set_prefix(prefix)
-                        nt.append(note)
-                        prefix = ""
-                    elif c == "#":
-                        i += 1
-                        c = line[i]
-                        if not "1" <= c <= "7":
-                            raise NotationError("'#' must before a number tone")
-                        note = NoteNode(
-                            self._note_to_pitch("#" + c), self._pitch_base
-                        )
-                        note.set_prefix(prefix)
-                        nt.append(note)
-                        prefix = ""
-                    elif c == "b":
-                        i += 1
-                        c = line[i]
-                        if not "1" <= c <= "7":
-                            raise NotationError("'#' must before a number tone")
-                        note = NoteNode(
-                            self._note_to_pitch("b" + c), self._pitch_base
-                        )
-                        note.set_prefix(prefix)
-                        nt.append(note)
-                        prefix = ""
-                    elif c in ("(", "]"):
-                        self._pitch_base -= 1
-                    elif c in (")", "["):
-                        self._pitch_base += 1
-                    elif c == "\n":
-                        nt.append(EndNode())
-                    else:
-                        prefix += c
-                    i += 1
+                if line.startswith("1="):
+                    key = line.removeprefix("1=").strip()
+                    self._pitch_orig = self._tone_to_pitch(key)
+                    continue
+                nt.extend(self._generate_line(line))
 
             if self._pitch_base != 0:
                 raise NotationError("incompleted notation")
             self.notation = nt
+
+    def _note_decoration(self, st, node):
+        prefix = ""
+        suffix = ""
+        while node.base < self._pitch_base:
+            self._pitch_base -= 1
+            if len(st) == 0:
+                suffix += "("
+                st.append("(")
+            else:
+                c = st.pop()
+                if c == "[":
+                    prefix += "]"
+                elif c == "(":
+                    suffix += "("
+                    st.append(c)
+                    st.append("(")
+                else:
+                    raise NotationError("stack contain " + c)
+        while node.base > self._pitch_base:
+            self._pitch_base += 1
+            if len(st) == 0:
+                suffix = "["
+                st.append("[")
+            else:
+                c = st.pop()
+                if c == "(":
+                    prefix += ")"
+
+                elif c == "[":
+                    suffix = "["
+                    st.append(c)
+                    st.append("[")
+                else:
+                    raise NotationError("stack contain " + c)
+        return prefix, suffix, st
 
     def print(self, ofile):
         """
         output a tone
         """
         st = []
-        output = self.title + "\n" + self._key_signature() + "\n\n"
+        output = self.title + "\n" + self._key_signature() + "\n"
         for node in self.notation:
             if node.is_note:
-                prefix = ""
-                suffix = ""
-                while node.base < self._pitch_base:
-                    self._pitch_base -= 1
-                    if len(st) == 0:
-                        suffix += "("
-                        st.append("(")
-                    else:
-                        c = st.pop()
-                        if c == "[":
-                            prefix += "]"
-                        elif c == "(":
-                            suffix += "("
-                            st.append(c)
-                            st.append("(")
-                        else:
-                            raise NotationError("stack contain " + c)
-                while node.base > self._pitch_base:
-                    self._pitch_base += 1
-                    if len(st) == 0:
-                        suffix = "["
-                        st.append("[")
-                    else:
-                        c = st.pop()
-                        if c == "(":
-                            prefix += ")"
-
-                        elif c == "[":
-                            suffix = "["
-                            st.append(c)
-                            st.append("[")
-                        else:
-                            raise NotationError("stack contain " + c)
+                prefix, suffix, st = self._note_decoration(st, node)
 
                 output += (
                     prefix
