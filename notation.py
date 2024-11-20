@@ -140,17 +140,11 @@ class HeaderError(RuntimeError):
     Exception for invalid header format
     """
 
-    def __inti__(self, arg):
-        self.args = arg
-
 
 class NotationError(RuntimeError):
     """
     Exception for invalid note format
     """
-
-    def __inti__(self, arg):
-        self.args = arg
 
 
 class Node:
@@ -160,13 +154,15 @@ class Node:
 
     is_note: bool
     is_line_end: bool
-
-    def __init__(self):
-        self._value = None
-        self._pitch = None
-
-    def __str__(self):
-        return f"{self._value}"
+    # **prefix** definitaion
+    # prefix is a string before the Node
+    # if there is a line: '1 2 ? 3?', it means there are four nodes:
+    # - a note node **1**, with prefix that is a empty string
+    # - a note node **2**, with prefix that contains a string ` ` (a space)
+    # - a note node **3**, with prefix that contains a string ` ? `, the '?' is
+    #   around with space
+    # - a end node, with prefix that that contains string `?`
+    prefix = ""
 
 
 class NoteNode(Node):
@@ -175,18 +171,22 @@ class NoteNode(Node):
     """
 
     pitch = 0
+    # base should be in range (-2, 2)
+    # base > 0 means the note has a higher tone than the key and should be
+    # around with '[]'
+    # base > 0 means the note has a lower tone than the key and should be
+    # around with '()'
     base = 0
-    prefix = ""
 
-    def __init__(self, pitch, target):
+    def __init__(self, pitch: int, target: int):
         """
-        **pitch**: the pitch of the note
+        **pitch**: pitch of the note
+        **target**: pitch of the target key
         """
-        super().__init__()
         self.is_note = True
-        if not pitch in range(1, 12 * 5):
+        if not pitch in range(1, 12 * 5 + 1):
             raise NotationError(
-                "pitch should be in range (1, 60), but get " + pitch
+                "pitch should be in range (1, 60), but get " + str(pitch)
             )
         self.pitch = pitch
         offset = pitch - target
@@ -197,7 +197,7 @@ class NoteNode(Node):
             self.base += 1
             offset -= 12
 
-    def __str__(self):
+    def __str__(self) -> str:
         prefix = ""
         suffix = ""
         offset = self.base
@@ -212,12 +212,6 @@ class NoteNode(Node):
 
         return prefix + str(self.pitch) + suffix
 
-    def set_prefix(self, prefix):
-        """
-        set prefix
-        """
-        self.prefix = prefix
-
 
 class EndNode(Node):
     """
@@ -225,7 +219,6 @@ class EndNode(Node):
     """
 
     def __init__(self):
-        super().__init__()
         self.is_note = False
         self.is_line_end = True
 
@@ -249,7 +242,7 @@ class Notation:
         # pitch_base is in range(-2, 2)
         self._pitch_base = 0
 
-    def __str__(self):
+    def __str__(self) -> str:
         output = "{\n"
         output += "  keymap: " + str(self._keymap) + "\n"
         output += "  notemap: " + str(self._notemap) + "\n"
@@ -261,24 +254,24 @@ class Notation:
         output += "}"
         return output
 
-    def _keymap_idx(self, key):
+    def _keymap_idx(self, key: str) -> int:
         try:
             idx = self._keymap.index(key)
         except ValueError as e:
             raise NotationError("invalid key " + key) from e
         return idx
 
-    def _notemap_idx(self, note):
+    def _notemap_idx(self, note: str) -> int:
         try:
             idx = self._notemap.index(note)
         except ValueError as e:
             raise NotationError("invalid note " + note) from e
         return idx
 
-    def _key_signature(self):
+    def _key_signature(self) -> str:
         return "1=" + self._keymap[(self._pitch_target - 1) % 12]
 
-    def set_notemap(self, new_notemap):
+    def set_notemap(self, new_notemap: list):
         """
         set notemap
         """
@@ -346,7 +339,7 @@ class Notation:
             offset += 12 * 2
         return self._notemap[offset % 12]
 
-    def _generate_line(self, line):
+    def _generate_line(self, line: str) -> list:
         nt = []
         i = 0
         prefix = ""
@@ -355,7 +348,7 @@ class Notation:
             if "1" <= c <= "7":
                 pitch = self._note_to_pitch(c)
                 note = NoteNode(pitch, self._pitch_target)
-                note.set_prefix(prefix)
+                note.prefix = prefix
                 nt.append(note)
                 prefix = ""
             elif c == "#":
@@ -365,10 +358,15 @@ class Notation:
                     # if '#' is not a note, ignore it
                     prefix += "#"
                     continue
-                note = NoteNode(
-                    self._note_to_pitch("#" + c), self._pitch_target
-                )
-                note.set_prefix(prefix)
+                if c == "7":
+                    self._pitch_base += 1
+                    note = NoteNode(self._note_to_pitch(c), self._pitch_target)
+                    self._pitch_base -= 1
+                else:
+                    note = NoteNode(
+                        self._note_to_pitch("#" + c), self._pitch_target
+                    )
+                note.prefix = prefix
                 nt.append(note)
                 prefix = ""
             elif c == "b":
@@ -380,7 +378,7 @@ class Notation:
                 note = NoteNode(
                     self._note_to_pitch("b" + c), self._pitch_target
                 )
-                note.set_prefix(prefix)
+                note.prefix = prefix
                 nt.append(note)
                 prefix = ""
             elif c in ("(", "]"):
@@ -388,13 +386,16 @@ class Notation:
             elif c in (")", "["):
                 self._pitch_base += 1
             elif c == "\n":
-                nt.append(EndNode())
+                node = EndNode()
+                node.prefix = prefix
+                nt.append(node)
+                prefix = ""
             else:
                 prefix += c
             i += 1
         return nt
 
-    def translate(self, orig, target, ifile):
+    def translate(self, orig: str, target: str, ifile: str):
         """
         translate note to 'target'
         """
@@ -409,17 +410,36 @@ class Notation:
             # translate notation
             nt: list = []
             for line in fd:
+                # note signature line
                 if line.startswith("1="):
+                    if self._pitch_base != 0:
+                        raise NotationError(
+                            "there has a unclosed decoration before change "
+                            + "signature at line "
+                            + str(fd.tell())
+                        )
                     key = line.removeprefix("1=").strip()
                     self._pitch_orig = self._tone_to_pitch(key)
-                    continue
-                nt.extend(self._generate_line(line))
+                    node = EndNode()
+                    node.prefix = "// "+ line.strip()
+                    nt.append(node)
+                # comment line
+                elif line.startswith("//"):
+                    node = EndNode()
+                    node.prefix = line.strip()
+                    nt.append(node)
+                # note notation
+                else:
+                    nt.extend(self._generate_line(line))
 
             if self._pitch_base != 0:
-                raise NotationError("incompleted notation")
+                raise NotationError(
+                    "incompleted notation, pitch_base should be 0 but get "
+                    + str(self._pitch_base)
+                )
             self.notation = nt
 
-    def _note_decoration(self, st, node):
+    def _note_decoration(self, st: list, node: Node) -> (str, str, list):
         prefix = ""
         suffix = ""
         while node.base < self._pitch_base:
@@ -455,7 +475,7 @@ class Notation:
                     raise NotationError("stack contain " + c)
         return prefix, suffix, st
 
-    def print(self, ofile):
+    def print(self, ofile: str | None):
         """
         output a tone
         """
@@ -481,8 +501,8 @@ class Notation:
                         else:
                             self._pitch_base -= 1
                             output += "]"
-                output += "\n"
-        if ofile is sys.stdout:
+                output += node.prefix + "\n"
+        if ofile is None:
             print(output, end="")
         else:
             with open(ofile, "w", encoding="utf-8") as fd:
@@ -519,7 +539,7 @@ def main():
         "output_file",
         help="the output translated notation file",
         nargs="?",
-        default=sys.stdout,
+        default=None,
     )
     args = parser.parse_args()
 
