@@ -104,6 +104,36 @@ notemap = [
     "7",
 ]
 
+flat_notemap = [
+    "1",
+    "b2",
+    "2",
+    "b3",
+    "b4",
+    "4",
+    "b5",
+    "5",
+    "b6",
+    "6",
+    "b7",
+    "b1",
+]
+
+sharp_notemap = [
+    "#7",
+    "#1",
+    "2",
+    "#2",
+    "3",
+    "#3",
+    "#4",
+    "5",
+    "#5",
+    "6",
+    "#6",
+    "7",
+]
+
 
 class HeaderError(RuntimeError):
     """
@@ -227,7 +257,7 @@ class Notation:
         output += "  target pitch: " + str(self._pitch_target) + "\n"
         output += "  title: " + self.title + "\n"
         output += "  notation:\n"
-        output += "  " + str([str(x) for x in self.notation]) + '\n'
+        output += "  " + str([str(x) for x in self.notation]) + "\n"
         output += "}"
         return output
 
@@ -247,6 +277,12 @@ class Notation:
 
     def _key_signature(self):
         return "1=" + self._keymap[(self._pitch_target - 1) % 12]
+
+    def set_notemap(self, new_notemap):
+        """
+        set notemap
+        """
+        self._notemap = new_notemap
 
     def _tone_to_pitch(self, tone: str) -> int:
         """
@@ -463,6 +499,11 @@ def main():
         epilog="You can choose tone in " + str(keymap),
     )
     parser.add_argument(
+        "--prefer",
+        help="use falt note replace sharp note",
+        choices={"flat", "sharp"},
+    )
+    parser.add_argument(
         "-o",
         "--orig-key",
         default=0,
@@ -484,6 +525,10 @@ def main():
 
     sheet = Notation()
     sheet.translate(args.orig_key, args.target_key, args.input_file)
+    if args.prefer == "flat":
+        sheet.set_notemap(flat_notemap)
+    elif args.prefer == "sharp":
+        sheet.set_notemap(sharp_notemap)
     sheet.print(args.output_file)
 
 
