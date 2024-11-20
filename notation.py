@@ -360,8 +360,14 @@ class Notation:
                     continue
                 if c == "7":
                     self._pitch_base += 1
-                    note = NoteNode(self._note_to_pitch(c), self._pitch_target)
+                    note = NoteNode(
+                        self._note_to_pitch("1"), self._pitch_target
+                    )
                     self._pitch_base -= 1
+                elif c == '3':
+                    note = NoteNode(
+                        self._note_to_pitch('4'), self._pitch_target
+                    )
                 else:
                     note = NoteNode(
                         self._note_to_pitch("#" + c), self._pitch_target
@@ -421,7 +427,7 @@ class Notation:
                     key = line.removeprefix("1=").strip()
                     self._pitch_orig = self._tone_to_pitch(key)
                     node = EndNode()
-                    node.prefix = "// "+ line.strip()
+                    node.prefix = "// origin key signature " + line.strip()
                     nt.append(node)
                 # comment line
                 elif line.startswith("//"):
