@@ -86,7 +86,6 @@ Title
 """
 
 import argparse
-import sys
 
 keymap = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 notemap = [
@@ -256,7 +255,7 @@ class Notation:
 
     def _keymap_idx(self, key: str) -> int:
         try:
-            idx = self._keymap.index(key)
+            idx = self._keymap.index(key.upper())
         except ValueError as e:
             raise NotationError("invalid key " + key) from e
         return idx
@@ -364,9 +363,9 @@ class Notation:
                         self._note_to_pitch("1"), self._pitch_target
                     )
                     self._pitch_base -= 1
-                elif c == '3':
+                elif c == "3":
                     note = NoteNode(
-                        self._note_to_pitch('4'), self._pitch_target
+                        self._note_to_pitch("4"), self._pitch_target
                     )
                 else:
                     note = NoteNode(
@@ -532,8 +531,9 @@ def main():
     parser.add_argument(
         "-o",
         "--orig-key",
-        default=0,
-        help="translate from this tone, it can override the notation key",
+        default="C",
+        help="translate from this tone as default if there is not a key "
+        + "signature",
     )
     parser.add_argument(
         "-t", "--target-key", help="translate to this tone", required=True
