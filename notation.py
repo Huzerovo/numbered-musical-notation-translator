@@ -1,88 +1,6 @@
 #!/usr/bin/env python3
 """
-# 简谱（数字谱）记谱符号转化工具
-
-## 功能
-
-通俗来说，这是一个转调工具。但这个工具的作用**不是**音乐意义上的转调，
-它的功能是将一个调号下的记谱符号转为另一个调号下的记谱符号，
-符号代表的音高并不改变。
-
-比如，一个C#调的旋律`1 2 3`，转为C调后为`#1 #2 #3`。
-这方便在C调为基准的乐器，比如C调口琴下进行演奏。
-
-## 乐谱格式
-
-输入的简谱应该有类似的格式：
-```
-标题
-1=C
-
-1 2 3 4
-```
-
-其中
-- 第一行是简谱标题，通常是歌曲名称，这一行不会被修改。
-
-- 第二行是调号，以**1=**作为前缀，后面接着一个*字符谱号*，这一行在输出文件中会被
-  修改为转调后的调号。你可以在`key_map`找到*字符谱号*的定义。
-
-- 第三行是一个空白行，仅包含一个换行符。
-
-- 之后的是乐谱记谱符号，有效的符号为`1-7`、`#`、`b`、`()`、`[]`以及空格。
-  所有其他字符均会被忽略，但会保留在输出文件中。
-
-- **1**表示以调号标注的音为基准音，在以**1=C**为调号时表示'C'这个音。
-
-- **#1**表示一个半音，它比**1**高一个半音，**b1**表示一个半音，它比**1**低一个半音。
-
-- **1#**和**1b**均是非法的，因为可能造成混淆。
-
-- **(1)**表示一个低音，它比**1**低一个八度，**[1]**表示一个高音，它比**1**高一个八度。
-
-- 双重的`()`和`[]`表示倍低音和倍高音，比如**((1))**比**1**低两个八度。
-
-
-======================================================
-English description
-======================================================
-A harmonica numbered musical notation key translater
-
-Input file is a custom format text file, this is a example:
-```
-Title
-1=C
-
-1 2 3 4
-```
-
-- The first line is the title for this notation. This line will not be modified.
-
-- The second line is the notation key that start with a prefix **1=** and 
-  follow a *char note*. This line will be modified with the target key.
-  You can get the definination of a *char note* at class Notation.note_map.
-
-- The third line is a space line.
-
-- Then follow your numbered musical notation.
-  The notation is define with `1-7`, `#`, `b`, `()`, `[]` and space, any other
-  char will be ignored but keep in the output file.
-
-- **1** means a base tone, such as, **1** means 'C' in the notation key **1=C**.
-
-- **#1** means a semitone higher than **1** and **b1** means a semitone lower
-  than **1**.
-
-- **1#** and **1b** are illegal.
-
-- **(1)** means a octave lower than "1" and **[1]** means a octave higher than
-  "1". The double `()`, such as **((1))**, means a octave lower than "(1)",
-  and the double `[]` is also but means higher.
-
-- You can write notes continuously like **123**, it is same as **1 2 3**.
-  It also work with `()` and `[]`, **(123)** means **(1) (2) (3)**.
-  The output will keep the formation.
-
+A numbered musical notation translator
 """
 
 import argparse
@@ -232,6 +150,7 @@ class Notation:
 
     title: str
     notation: list = []
+    keep_key_signature = False
 
     def __init__(self):
         self._keymap = keymap
@@ -425,9 +344,10 @@ class Notation:
                         )
                     key = line.removeprefix("1=").strip()
                     self._pitch_orig = self._tone_to_pitch(key)
-                    node = EndNode()
-                    node.prefix = "// origin key signature " + line.strip()
-                    nt.append(node)
+                    if self.keep_key_signature:
+                        node = EndNode()
+                        node.prefix = "// origin key signature " + line.strip()
+                        nt.append(node)
                 # comment line
                 elif line.startswith("//"):
                     node = EndNode()
@@ -480,7 +400,7 @@ class Notation:
                     raise NotationError("stack contain " + c)
         return prefix, suffix, st
 
-    def print(self, ofile: str | None):
+    def print(self, ofile: str = None):
         """
         output a tone
         """
@@ -524,6 +444,11 @@ def main():
         epilog="You can choose tone in " + str(keymap),
     )
     parser.add_argument(
+        "--comment-key-signature",
+        help="show origin key signature in comment line",
+        action="store_true",
+    )
+    parser.add_argument(
         "--prefer",
         help="use falt note replace sharp note",
         choices={"flat", "sharp"},
@@ -550,11 +475,15 @@ def main():
     args = parser.parse_args()
 
     sheet = Notation()
+    if args.comment_key_signature:
+        sheet.keep_key_signature = True
     sheet.translate(args.orig_key, args.target_key, args.input_file)
+
     if args.prefer == "flat":
         sheet.set_notemap(flat_notemap)
     elif args.prefer == "sharp":
         sheet.set_notemap(sharp_notemap)
+
     sheet.print(args.output_file)
 
 
